@@ -50,5 +50,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Keep(args) => commands::keep::run(args),
         Command::Config(args) => commands::config::run(args),
         Command::Export(args) => commands::export::run(args),
+        Command::Capture(args) => commands::capture::run(args),
     }
 }

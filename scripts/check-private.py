@@ -36,7 +36,7 @@ ALLOWED_VALUES = {
 HEX_LABEL = "疑似密钥 (64 位十六进制)"
 
 # 这些文件里的 64 位十六进制是依赖校验和, 不是密钥.
-HEX_EXEMPT_FILES = {"Cargo.lock"}
+HEX_EXEMPT_FILES = {"Cargo.lock", "uv.lock"}
 
 # 通用模式, 与本机具体内容无关. 只查 macOS 的家目录形式 `/Users/<名字>`;
 # 文档里的 `<tmp>/home/Library/...` 是占位路径, 不应当作泄露.

@@ -69,6 +69,10 @@ keep *args:
 export db out *args:
     cargo run -q -p wxmsg-cli -- export --db {{db}} --keys {{keys}} --out {{out}} {{args}}
 
+# 抓取库密钥, 需要在有调试权限的终端里跑, 并扫一次码.
+capture *args:
+    cargo run -q -p wxmsg-cli -- capture {{args}}
+
 # 查看当前生效的配置, 以及各路径最终落在哪里.
 show-config *args:
     cargo run -q -p wxmsg-cli -- config {{args}}

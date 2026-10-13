@@ -39,6 +39,9 @@ pub enum Command {
 
     /// 把会话导出成 Markdown, JSON 或 CSV.
     Export(ExportArgs),
+
+    /// 抓取库密钥 (需要扫一次码).
+    Capture(CaptureArgs),
 }
 
 /// 各子命令共用的参数.
@@ -244,6 +247,37 @@ pub struct ConfigArgs {
     /// 以 JSON 输出.
     #[arg(long)]
     pub json: bool,
+}
+
+/// `capture` 子命令.
+///
+/// 为什么是"一次性": 微信 4.1 之后进程内存里不再留着 `x'<hexkey>'` 形式的密钥, 密钥只在
+/// 加解密瞬间经过 CommonCrypto。因此抓取必须发生在登录态, 且最好当场抓够所有库。
+#[derive(Debug, Args)]
+pub struct CaptureArgs {
+    /// 共用参数 (只用得到 `--keys` 与 `--config`).
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// 微信应用路径.
+    #[arg(long, value_name = "APP")]
+    pub app: Option<PathBuf>,
+
+    /// 工作目录: 副本与抓取结果都放这里, 默认 `.tmp/capture`.
+    #[arg(long, value_name = "DIR")]
+    pub work: Option<PathBuf>,
+
+    /// 最长收集多少秒.
+    #[arg(long, default_value_t = 900, value_name = "SECS")]
+    pub timeout: u64,
+
+    /// 附加到已经在跑的进程, 而不是启动副本.
+    #[arg(long, value_name = "PID")]
+    pub pid: Option<u32>,
+
+    /// 只输出密钥, 不输出钩子的其它上报.
+    #[arg(long)]
+    pub quiet_sidecar: bool,
 }
 
 /// `export` 子命令.

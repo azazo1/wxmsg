@@ -1,0 +1,9 @@
+[project]
+name = "wxmsg-sidecar"
+version = "0.1.0"
+description = "wxmsg 的密钥抓取 sidecar: 在微信副本里钩住 CommonCrypto, 收集 32 字节原始密钥"
+requires-python = ">=3.11"
+dependencies = ["frida>=17.0.0"]
+
+[tool.uv]
+package = false

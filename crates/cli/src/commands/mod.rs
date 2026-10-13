@@ -4,6 +4,7 @@
 //! 命令行参数的定义在 [`crate::cli`], 这里只负责执行。
 
 pub mod archive;
+pub mod capture;
 pub mod config;
 pub mod export;
 pub mod keep;

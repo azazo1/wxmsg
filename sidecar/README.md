@@ -32,12 +32,35 @@
 
 ## 控制端
 
+抓取由 `wxmsg capture` 驱动: 它负责复制副本, 重定向家目录, 调起 `capture.py`, 最后用 HMAC 把
+候选密钥配到各个库。单独手工运行也可以:
+
 ```shell
 # 副本启动后 (Gadget 监听 127.0.0.1:27042, on_load 为 wait)
 frida -H 127.0.0.1:27042 -l sidecar/hook.js
 ```
 
-或使用 frida-python 自行连接, 把 `KEY32` 上报逐行落盘。
+或让 `capture.py` 自己启动副本并收集:
+
+```shell
+uv run --project sidecar python sidecar/capture.py \
+  --target /path/to/WeChat.app/Contents/MacOS/WeChat \
+  --hook sidecar/hook.js --home /path/to/副本家目录 \
+  --out keys.json --timeout 900
+```
+
+依赖由 `sidecar/pyproject.toml` 声明, `uv run` 会把它装进 `sidecar/.venv`, 不需要手工安装。
+
+### 权限
+
+macOS 不允许进程随便挂到别的进程上。若报 `PermissionDeniedError: unable to access process`,
+说明当前终端没有调试权限: 换一个被授权的终端, 或在 系统设置 -> 隐私与安全性 -> 开发者工具
+里把终端加进去。受限沙箱里也会出现同样的报错。
+
+### 候选密钥不是最终答案
+
+钩子只能给出"经过 CommonCrypto 的 32 字节值", 里面混着大量与微信库无关的密钥。哪把开哪个库,
+由主程序读库文件、验页 1 的 HMAC 来判断, 因此抓取与匹配是分开的两件事。
 
 ## 出处
 
