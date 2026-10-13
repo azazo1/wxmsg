@@ -259,10 +259,13 @@ pub fn leaf_pages(source: &impl PageSource, root: u32) -> Result<Vec<u32>> {
         } else if header.is_interior_table() {
             stack.extend(child_pages(&page, page_number as u64)?);
         } else {
-            return Err(CoreError::NotLeafPage {
-                page: page_number as u64,
-                page_type: header.page_type,
-            });
+            // 页类型不是表页 (例如指向了空闲页) 说明这棵子树已经不完整。这里只跳过不中断:
+            // 目标是尽量多地收集叶页, 而不是当校验器。
+            tracing::warn!(
+                page = page_number,
+                page_type = header.page_type,
+                "页类型不是表页, 跳过这棵子树"
+            );
         }
     }
 

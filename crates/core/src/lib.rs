@@ -5,6 +5,7 @@
 //!
 //! 有关微信的存储格式, 密钥来源与撤回行为的完整结论, 见项目 `docs/handover.md`.
 
+pub mod archive;
 pub mod btree;
 pub mod chat;
 pub mod crypto;

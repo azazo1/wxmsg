@@ -420,8 +420,8 @@ wxmsg sessions --db "<数据根>/db_storage/message/message_1.db" \
 | `justfile` | 完成 | 常用任务: 构建, 测试, 静态检查, 隐私扫描 |
 | `scripts/check-private.py` | 完成 | 提交前扫描个人信息与密钥; 专属敏感词在 `secrets/private-terms.txt` |
 | `LICENSE` | 完成 | MIT, 与 `Cargo.toml` 的 license 字段一致 |
-| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` `crypto` `verify` `wal` `btree` `image` `recall` |
-| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `commands/{sessions,messages,plain,recalls,table}` |
+| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` `crypto` `verify` `wal` `btree` `image` `recall` `archive` |
+| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `paths` `commands/{sessions,messages,plain,recalls,snap,keep,archive,table}` |
 | `secrets/` | 本地 | 19 个库密钥, 权限 0600, 已被 `.gitignore` 排除 |
 | `.references/` | 本地 | 上游项目源码与本地补丁 diff, REA 分析脚本, 已被 `.gitignore` 排除 |
 | `apps/desktop` | 空 | 未开始, 到 M6 再做 |
@@ -453,18 +453,46 @@ M2 需要的四个模块都已落地:
 但内容从 WAL 第 9 代第 121 帧完整解出, 与当前表对照后判定为已删除行。也就是说**删除行还原的
 通路成立**, 只是当前这份 WAL 里已经找不到上午那次撤回所涉及的页。
 
+### M3 完成情况
+
+M3 要解决的是 M2 的软肋: WAL 是环形文件, 事后去挖只能捡到剩下的。归档把密文按时间留下来。
+
+| 模块 | 职责 |
+| --- | --- |
+| `core::archive::chunk` | 内容寻址的块存储, 默认 1 MiB 一块, 按 sha256 去重, 读回时校验 |
+| `core::archive` | 快照清单 (`version` / `created_at` / 逐文件块序列), 增量判定, 还原, 保留策略与块回收 |
+| `core::keys::KeyHistory` | 密钥按时间累积保存; 用 HMAC 自动判定某把密钥能否开某个库 |
+| `wxmsg snap` / `wxmsg keep` | 取一次快照 / 常驻监听 (FSEvents 加去抖与节流) |
+| `wxmsg recalls --archive` | 从快照还原库与 WAL 后再找回, 用完即删明文副本 |
+
+实测 (对真实账号目录, 归档放在工作区内):
+
+| 检查 | 结果 |
+| --- | --- |
+| 首次快照 (79 个文件, 404.7 MB) | 12.1 秒 |
+| 第二次快照 (无变化) | 0.8 秒, 归档体积**零增长** |
+| 还原校验 | 还原出来的每个库与 WAL 的 sha256 与清单**逐字节一致** |
+| `recalls --archive` | 从快照里找回同一条已删消息, 并自动清理明文副本, 全程 67 秒 |
+
+默认参数 (都可在命令行覆盖): 每 300 秒最多一次快照, 变化后静置 3 秒才动手, 保留 7 天,
+总量上限 8 GiB, 到顶自动丢最旧的快照并回收其块。归档只含密文, 因此不含明文聊天记录。
+
+这一轮还修掉两个只看实时库时暴露不出来的问题:
+
+- 页遍历必须把**当前代 WAL 叠加到主库之上**。检查点前后主库文件本身还是旧状态, 只看文件会
+  沿着过期的 B 树指针走到已被回收的页
+- 旧代的同一个页号当时可能装着索引页或空闲页, 解码时不能假定它一定是叶页
+
 ### 下一步
 
-M2 还差一次**现场验证**: 需要一条刚发出就被撤回的消息, 用 `recalls` 当场把原文取回来。
-做法是在微信里发一条消息 (文字或文件) 再撤回, 然后立刻:
+按依赖关系把顺序调整为: **M5 (CLI 与配置) -> M7 (导出) -> M6 (图形界面) -> M4 (密钥抓取)**。
+M4 需要用户扫码, 放在最后实现, 届时再约验证时间。
+
+M2 仍然欠一次现场验证 (发一条消息再撤回, 当场用 `recalls` 取回原文)。因为 `keep` 已经在跑
+归档, 这一步什么时候做都不会再错过窗口了:
 
 ```shell
-wxmsg recalls --db "<数据根>/db_storage/message/message_1.db" \
-  --keys secrets/all_keys.json --copy-to .tmp/db --chat <该会话的内部 wxid>
+wxmsg snap    # 先取一次快照
+wxmsg recalls --db "<数据根>/db_storage/message/message_1.db" --chat <该会话的内部 wxid>
 ```
-
-若这一步通过, M2 收口, 随后进入 M3 (增量归档), 那也是解决"WAL 会被环形覆盖"的正解。
-
-判据: 对一条已知撤回的会话, 还原出被删消息的完整正文, 并与 2.5 节实测过的 `demo.txt`
-样例对照。
 

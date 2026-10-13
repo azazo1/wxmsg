@@ -86,14 +86,40 @@ struct HistoricalRow {
     found_in: FoundIn,
 }
 
-/// 从主库文件读页的来源.
-struct DbPageSource<'a> {
+/// 主库文件叠加当前代 WAL 之后的页来源.
+///
+/// 这一步不能省: 微信在检查点前后, 主库文件本身可能还是旧状态, 真正的"当前内容"要由 WAL
+/// 里当前代的帧覆盖上去。SQLite 自己就是这么做的, 我们按页读的时候也得照做, 否则会沿着
+/// 过期的 B 树指针走到已经被回收的页。
+struct CurrentView<'a> {
     reader: &'a PageReader,
+    cipher: &'a PageCipher,
+    overlay: BTreeMap<u32, &'a [u8]>,
 }
 
-impl PageSource for DbPageSource<'_> {
+impl<'a> CurrentView<'a> {
+    /// 用当前代的帧搭出叠加层 (同一页取最后写入的那一帧).
+    fn new(reader: &'a PageReader, cipher: &'a PageCipher, wal: Option<&'a Wal>) -> Self {
+        let mut overlay = BTreeMap::new();
+        if let Some(generation) = wal.and_then(Wal::current) {
+            for frame in &generation.frames {
+                overlay.insert(frame.page_number, frame.page.as_slice());
+            }
+        }
+        Self {
+            reader,
+            cipher,
+            overlay,
+        }
+    }
+}
+
+impl PageSource for CurrentView<'_> {
     fn read_page(&self, page_number: u32) -> Result<Vec<u8>> {
-        self.reader.read(page_number as u64)
+        match self.overlay.get(&page_number) {
+            Some(raw) => self.cipher.decrypt_page(page_number as u64, raw),
+            None => self.reader.read(page_number as u64),
+        }
     }
 }
 
@@ -129,7 +155,7 @@ pub fn recover(
     let reader = PageReader::open(db_path, cipher.clone())?;
 
     // 叶页 -> 表下标. 页号会随表变化, 这里以当前结构为准。
-    let source = DbPageSource { reader: &reader };
+    let source = CurrentView::new(&reader, &cipher, wal);
     let mut leaf_owner: BTreeMap<u32, usize> = BTreeMap::new();
     for (index, table) in tables.iter().enumerate() {
         for page in btree::leaf_pages(&source, table.root_page)? {
@@ -153,9 +179,9 @@ pub fn recover(
     let usable_size = params.payload_size();
     let mut historical: BTreeMap<(usize, i64), HistoricalRow> = BTreeMap::new();
 
-    // 一、主库里的页: 页内可能还留着更早被删的单元。
+    // 一、主库加当前代 WAL 出来的"当前页": 页内可能还留着更早被删的单元。
     for (&page_number, &index) in &leaf_owner {
-        let page = reader.read(page_number as u64)?;
+        let page = source.read_page(page_number)?;
         report.pages += 1;
         absorb(
             &page,
@@ -223,6 +249,12 @@ fn absorb(
     historical: &mut BTreeMap<(usize, i64), HistoricalRow>,
     report: &mut RecallReport,
 ) -> Result<()> {
+    // 旧代的同一个页号当时可能装着别的东西 (索引页, 空闲页), 这不算异常, 跳过就是。
+    let header = btree::PageHeader::parse(page, page_number)?;
+    if !header.is_leaf_table() {
+        return Ok(());
+    }
+
     let cells = btree::leaf_cells(page, page_number, usable_size)?;
     for cell in cells {
         // 溢出载荷只解得出页内那一段, 完整解码可能失败, 跳过即可。

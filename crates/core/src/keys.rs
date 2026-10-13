@@ -18,14 +18,202 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::crypto::{CipherParams, KEY_SIZE, verify_key};
 use crate::error::{CoreError, Result};
 use crate::hex;
 
+/// 密钥历史格式版本.
+pub const KEY_HISTORY_VERSION: u32 = 1;
+
 /// 单个数据库的密钥记录.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KeyEntry {
     /// 十六进制形式的 32 字节原始密钥.
     pub enc_key: String,
+}
+
+/// 一次密钥抓取.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyCapture {
+    /// 抓取时间 (Unix 秒).
+    pub captured_at: i64,
+    /// 这次抓到的库与密钥.
+    pub entries: BTreeMap<String, KeyEntry>,
+}
+
+/// 密钥历史.
+///
+/// 微信更新, 换号或迁移记录都会让密钥轮换, 因此密钥要**带时间累积**保存, 而不是覆盖。
+/// 归档里的密文因此永远不会因为"密钥换了"而变成废纸。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyHistory {
+    /// 格式版本.
+    pub version: u32,
+    /// 历次抓取, 按时间升序.
+    pub captures: Vec<KeyCapture>,
+}
+
+impl Default for KeyHistory {
+    fn default() -> Self {
+        Self {
+            version: KEY_HISTORY_VERSION,
+            captures: Vec::new(),
+        }
+    }
+}
+
+impl KeyHistory {
+    /// 从 JSON 文件加载; 文件不存在时返回空历史.
+    pub fn load(path: impl AsRef<Path>) -> Result<Self> {
+        let path = path.as_ref();
+        if !path.exists() {
+            return Ok(Self::default());
+        }
+        let text = std::fs::read_to_string(path).map_err(|source| CoreError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let history: Self = serde_json::from_str(&text).map_err(|source| CoreError::KeyFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        if history.version != KEY_HISTORY_VERSION {
+            return Err(CoreError::Archive(format!(
+                "密钥历史版本 {} 不受支持",
+                history.version
+            )));
+        }
+        Ok(history)
+    }
+
+    /// 保存为 JSON 文件.
+    pub fn save(&self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let text = serde_json::to_string_pretty(self).map_err(|source| CoreError::KeyFile {
+            path: PathBuf::from(path),
+            source,
+        })?;
+        std::fs::write(path, text).map_err(|source| CoreError::Io {
+            path: PathBuf::from(path),
+            source,
+        })
+    }
+
+    /// 追加一次抓取; 与已有条目完全相同时不记录, 免得历史里堆一堆重复项.
+    pub fn append(&mut self, captured_at: i64, keys: &KeyStore) -> bool {
+        let entries: BTreeMap<String, KeyEntry> = keys
+            .entries
+            .iter()
+            .map(|(name, key)| {
+                (
+                    name.clone(),
+                    KeyEntry {
+                        enc_key: hex::encode(key),
+                    },
+                )
+            })
+            .collect();
+        if entries.is_empty() {
+            return false;
+        }
+        if self
+            .captures
+            .last()
+            .is_some_and(|last| last.entries == entries)
+        {
+            return false;
+        }
+        self.captures.push(KeyCapture {
+            captured_at,
+            entries,
+        });
+        true
+    }
+
+    /// 历次抓取的数量.
+    pub fn len(&self) -> usize {
+        self.captures.len()
+    }
+
+    /// 是否没有任何记录.
+    pub fn is_empty(&self) -> bool {
+        self.captures.is_empty()
+    }
+
+    /// 用 HMAC 找出能打开这个库的密钥.
+    ///
+    /// 从最近的抓取往前找, 命中即返回。库改名, 复制或换目录都不影响匹配。
+    pub fn key_for(
+        &self,
+        db_path: impl AsRef<Path>,
+        params: CipherParams,
+    ) -> Result<Option<[u8; KEY_SIZE]>> {
+        let db_path = db_path.as_ref();
+        for capture in self.captures.iter().rev() {
+            for entry in capture.entries.values() {
+                let key = crate::crypto::key_from_hex(&entry.enc_key)?;
+                if verify_key(db_path, key, params)? {
+                    return Ok(Some(key));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// 扫描一个目录下的库, 用历史里的密钥逐个匹配, 得到一份可直接用的密钥集合.
+    ///
+    /// 键名是相对 `root` 的路径, 与 [`KeyStore`] 的约定一致。
+    pub fn match_directory(
+        &self,
+        root: impl AsRef<Path>,
+        params: CipherParams,
+    ) -> Result<KeyStore> {
+        let root = root.as_ref();
+        let mut store = KeyStore::default();
+        for path in collect_databases(root)? {
+            let Some(key) = self.key_for(&path, params)? else {
+                tracing::debug!(path = %path.display(), "没有匹配的密钥");
+                continue;
+            };
+            let rel = path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .components()
+                .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("/");
+            store.insert_key(&rel, key);
+        }
+        Ok(store)
+    }
+}
+
+/// 递归找目录下的 `.db` 文件.
+fn collect_databases(root: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        let entries = std::fs::read_dir(&directory).map_err(|source| CoreError::Io {
+            path: directory.clone(),
+            source,
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|source| CoreError::Io {
+                path: directory.clone(),
+                source,
+            })?;
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if path.extension().is_some_and(|extension| extension == "db") {
+                found.push(path);
+            }
+        }
+    }
+    found.sort();
+    Ok(found)
 }
 
 /// 以库的相对路径为键的密钥集合, 例如 `message/message_1.db`.
@@ -69,6 +257,11 @@ impl KeyStore {
         key.copy_from_slice(&bytes);
         self.entries.insert(name.to_owned(), key);
         Ok(())
+    }
+
+    /// 插入一条已经有字节形式的密钥.
+    pub fn insert_key(&mut self, name: &str, key: [u8; KEY_SIZE]) {
+        self.entries.insert(name.to_owned(), key);
     }
 
     /// 查询密钥.

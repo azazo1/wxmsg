@@ -226,6 +226,38 @@ pub fn read_salt(path: impl AsRef<Path>) -> Result<[u8; SALT_SIZE]> {
     Ok(salt)
 }
 
+/// 判断这把密钥能不能打开这个库.
+///
+/// 做法是直接读页 1 验 HMAC: 对上了就说明密钥与库匹配, 完全不需要知道库的文件名。
+/// 这让密钥可以只按内容匹配, 避免了改名, 复制或换账号目录之后找不到密钥的问题。
+pub fn verify_key(
+    path: impl AsRef<Path>,
+    key: [u8; KEY_SIZE],
+    params: CipherParams,
+) -> Result<bool> {
+    let path = path.as_ref();
+    let salt = read_salt(path)?;
+    let page_size = params.page_size();
+    let mut file = std::fs::File::open(path).map_err(|source| CoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut buffer = vec![0u8; page_size];
+    match std::io::Read::read_exact(&mut file, &mut buffer) {
+        Ok(()) => {}
+        // 文件不足一页, 肯定不是能打开的库。
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(false),
+        Err(source) => {
+            return Err(CoreError::Io {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+    let cipher = PageCipher::new(key, salt, params);
+    Ok(cipher.decrypt_page(1, &buffer).is_ok())
+}
+
 /// 从十六进制字符串解析密钥.
 pub fn key_from_hex(text: &str) -> Result<[u8; KEY_SIZE]> {
     let bytes = crate::hex::decode(text).ok_or(CipherError::KeyLength)?;

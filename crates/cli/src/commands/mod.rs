@@ -3,10 +3,13 @@
 //! 每个子命令一个模块, 公共的装配逻辑 (加载密钥, 复制库, 打开连接) 放在本模块。
 //! 命令行参数的定义在 [`crate::cli`], 这里只负责执行。
 
+pub mod archive;
+pub mod keep;
 pub mod messages;
 pub mod plain;
 pub mod recalls;
 pub mod sessions;
+pub mod snap;
 mod table;
 
 use anyhow::Context;
@@ -27,28 +30,62 @@ pub(crate) fn format_time(unix: Option<i64>) -> String {
     }
 }
 
+/// 解析带 K / M / G 后缀的容量写法 (1024 进制; 不带后缀就是字节).
+pub(crate) fn parse_size(text: &str) -> Option<u64> {
+    let text = text.trim();
+    let (digits, multiplier) = match text.chars().last()?.to_ascii_uppercase() {
+        'K' => (&text[..text.len() - 1], 1024u64),
+        'M' => (&text[..text.len() - 1], 1024 * 1024),
+        'G' => (&text[..text.len() - 1], 1024 * 1024 * 1024),
+        'T' => (&text[..text.len() - 1], 1024u64.pow(4)),
+        _ => (text, 1),
+    };
+    let value: f64 = digits.trim().parse().ok()?;
+    if value < 0.0 {
+        return None;
+    }
+    Some((value * multiplier as f64) as u64)
+}
+
+/// 把字节数写成人能读的形式.
+pub(crate) fn format_size(bytes: u64) -> String {
+    const UNITS: [(&str, u64); 4] = [
+        ("T", 1024 * 1024 * 1024 * 1024),
+        ("G", 1024 * 1024 * 1024),
+        ("M", 1024 * 1024),
+        ("K", 1024),
+    ];
+    for (unit, scale) in UNITS {
+        if bytes >= scale {
+            return format!("{:.1}{unit}", bytes as f64 / scale as f64);
+        }
+    }
+    format!("{bytes}B")
+}
+
 /// 加载密钥文件.
 ///
 /// 密钥内容只由本程序读取, 不进入日志。
 pub(crate) fn load_keys(common: &CommonArgs) -> anyhow::Result<KeyStore> {
-    let keys = KeyStore::load(&common.keys)
-        .with_context(|| format!("加载密钥文件失败: {}", common.keys.display()))?;
-    tracing::info!(
-        count = keys.len(),
-        path = %common.keys.display(),
-        "已加载密钥文件"
-    );
+    let path = common
+        .keys
+        .clone()
+        .unwrap_or_else(crate::paths::default_keys);
+    let keys =
+        KeyStore::load(&path).with_context(|| format!("加载密钥文件失败: {}", path.display()))?;
+    tracing::info!(count = keys.len(), path = %path.display(), "已加载密钥文件");
     Ok(keys)
 }
 
 /// 决定要读取哪一个库文件: 指定 `--copy-to` 时先复制, 否则直接用原路径.
 pub(crate) fn prepare_path(common: &CommonArgs) -> anyhow::Result<std::path::PathBuf> {
+    let db = common.db.clone().context("需要 --db 指定库文件")?;
     match common.copy_to.as_deref() {
         Some(dir) => {
-            let copied = wxmsg_core::copy_database(&common.db, dir)
-                .with_context(|| format!("复制库失败: {}", common.db.display()))?;
+            let copied = wxmsg_core::copy_database(&db, dir)
+                .with_context(|| format!("复制库失败: {}", db.display()))?;
             tracing::info!(
-                source = %common.db.display(),
+                source = %db.display(),
                 copy = %copied.display(),
                 "已复制库副本, 后续只读写副本"
             );
@@ -56,7 +93,7 @@ pub(crate) fn prepare_path(common: &CommonArgs) -> anyhow::Result<std::path::Pat
         }
         None => {
             tracing::warn!("未指定 --copy-to, 直接打开原始库; 微信正在写入时结果可能不一致");
-            Ok(common.db.clone())
+            Ok(db)
         }
     }
 }

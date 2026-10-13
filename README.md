@@ -36,12 +36,21 @@ wxmsg plain --db <数据根>/db_storage/message/message_1.db \
 # 从 WAL 里找回被撤回 (被删除) 的消息
 wxmsg recalls --db <数据根>/db_storage/message/message_1.db \
   --keys secrets/all_keys.json --copy-to .tmp/db --limit 20
+
+# 持续留存: 每 5 分钟最多一次快照, 保留 7 天, 上限 8 GiB (只存密文)
+wxmsg keep
+
+# 只取一次快照, 便于交给 launchd 之类定时器调用
+wxmsg snap --once
+
+# 从归档快照里找回 (留多久就能回溯多久)
+wxmsg recalls --archive ~/Library/Application\ Support/wxmsg/archive --limit 20
 ```
 
 `plain` 的产物含完整聊天记录, 只用于排错与自检, 用完请删除。
 
 `recalls` 不依赖任何事前归档: 被删消息所在页的旧版本只要还在 WAL 文件里就能找回。WAL 是
-固定大小的环形文件, 越早的撤回越可能已经被覆盖, 所以要稳定还原仍然需要持续留存 (M3)。
+固定大小的环形文件, 越早的撤回越可能已经被覆盖, 所以要稳定还原需要让 `keep` 常驻。
 
 `--copy-to` 会先把库连同 WAL 复制到指定目录再打开, 避免直接读写微信正在使用的文件。
 密钥文件放在 `secrets/` 下, 不入库。

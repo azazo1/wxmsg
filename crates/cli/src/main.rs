@@ -4,6 +4,7 @@
 
 mod cli;
 mod commands;
+mod paths;
 
 use std::process::ExitCode;
 
@@ -45,5 +46,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Messages(args) => commands::messages::run(args),
         Command::Plain(args) => commands::plain::run(args),
         Command::Recalls(args) => commands::recalls::run(args),
+        Command::Snap(args) => commands::snap::run(args),
+        Command::Keep(args) => commands::keep::run(args),
     }
 }

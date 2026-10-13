@@ -115,6 +115,10 @@ pub enum CoreError {
         /// 实际的页类型.
         page_type: u8,
     },
+
+    /// 归档相关错误.
+    #[error("归档错误: {0}")]
+    Archive(String),
 }
 
 /// 核心库结果类型.
