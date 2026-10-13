@@ -78,6 +78,43 @@ pub enum CoreError {
     /// 页解密失败.
     #[error("{0}")]
     Cipher(#[from] crate::crypto::CipherError),
+
+    /// WAL 解析失败.
+    #[error("WAL 解析失败: {0}")]
+    Wal(#[from] crate::wal::WalError),
+
+    /// 记录解码失败.
+    #[error("记录解码失败: {0}")]
+    Record(String),
+
+    /// 页内容不足.
+    #[error("页 {page} 内容不足: 需要 {needed} 字节, 实际 {actual} 字节")]
+    PageTooShort {
+        /// 页号.
+        page: u64,
+        /// 需要的长度.
+        needed: usize,
+        /// 实际长度.
+        actual: usize,
+    },
+
+    /// 期望叶子表页, 但页类型不符.
+    #[error("页 {page} 不是叶子表页, 页类型为 {page_type}")]
+    NotLeafPage {
+        /// 页号.
+        page: u64,
+        /// 实际的页类型.
+        page_type: u8,
+    },
+
+    /// 期望内部表页, 但页类型不符.
+    #[error("页 {page} 不是内部表页, 页类型为 {page_type}")]
+    NotInteriorPage {
+        /// 页号.
+        page: u64,
+        /// 实际的页类型.
+        page_type: u8,
+    },
 }
 
 /// 核心库结果类型.

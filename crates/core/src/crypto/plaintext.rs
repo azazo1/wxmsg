@@ -80,28 +80,69 @@ pub fn read_page(
     cipher: &PageCipher,
     page_number: u64,
 ) -> Result<Vec<u8>> {
-    let source = source.as_ref();
-    let page_size = cipher.params().page_size();
-    let mut file = File::open(source).map_err(|error| CoreError::Io {
-        path: source.to_path_buf(),
-        source: error,
-    })?;
-    file.seek(SeekFrom::Start((page_number - 1) * page_size as u64))
-        .map_err(|error| CoreError::Io {
-            path: source.to_path_buf(),
+    let reader = PageReader::open(source, cipher.clone())?;
+    reader.read(page_number)
+}
+
+/// 反复读取同一个库里的页.
+///
+/// 每次调用都开一次文件太浪费, 这里把文件句柄留着; 内部用 `RefCell` 共享游标,
+/// 因此本类型不是 `Sync`, 单线程遍历足够。
+pub struct PageReader {
+    file: std::cell::RefCell<File>,
+    cipher: PageCipher,
+    path: std::path::PathBuf,
+}
+
+impl PageReader {
+    /// 打开库.
+    pub fn open(source: impl AsRef<Path>, cipher: PageCipher) -> Result<Self> {
+        let path = source.as_ref().to_path_buf();
+        let file = File::open(&path).map_err(|error| CoreError::Io {
+            path: path.clone(),
             source: error,
         })?;
-
-    let mut buffer = vec![0u8; page_size];
-    let read = read_full(&mut file, &mut buffer, source)?;
-    if read != page_size {
-        return Err(CoreError::PageSize {
-            page: page_number,
-            expected: page_size,
-            actual: read,
-        });
+        Ok(Self {
+            file: std::cell::RefCell::new(file),
+            cipher,
+            path,
+        })
     }
-    cipher.decrypt_page(page_number, &buffer)
+
+    /// 读并解密一页.
+    pub fn read(&self, page_number: u64) -> Result<Vec<u8>> {
+        let page_size = self.cipher.params().page_size();
+        let mut buffer = vec![0u8; page_size];
+        {
+            let mut file = self.file.borrow_mut();
+            file.seek(SeekFrom::Start((page_number - 1) * page_size as u64))
+                .map_err(|error| CoreError::Io {
+                    path: self.path.clone(),
+                    source: error,
+                })?;
+            let mut filled = 0;
+            while filled < page_size {
+                let read = file
+                    .read(&mut buffer[filled..])
+                    .map_err(|error| CoreError::Io {
+                        path: self.path.clone(),
+                        source: error,
+                    })?;
+                if read == 0 {
+                    break;
+                }
+                filled += read;
+            }
+            if filled != page_size {
+                return Err(CoreError::PageSize {
+                    page: page_number,
+                    expected: page_size,
+                    actual: filled,
+                });
+            }
+        }
+        self.cipher.decrypt_page(page_number, &buffer)
+    }
 }
 
 /// 文件包含的页数 (向上取整, 不足一页时也算一页).

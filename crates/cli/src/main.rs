@@ -44,5 +44,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         Command::Sessions(args) => commands::sessions::run(args),
         Command::Messages(args) => commands::messages::run(args),
         Command::Plain(args) => commands::plain::run(args),
+        Command::Recalls(args) => commands::recalls::run(args),
     }
 }

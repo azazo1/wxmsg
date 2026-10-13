@@ -5,14 +5,18 @@
 //!
 //! 有关微信的存储格式, 密钥来源与撤回行为的完整结论, 见项目 `docs/handover.md`.
 
+pub mod btree;
 pub mod chat;
 pub mod crypto;
 pub mod error;
 mod hex;
+pub mod image;
 pub mod keys;
 pub mod message;
+pub mod recall;
 pub mod store;
 pub mod verify;
+pub mod wal;
 
 pub use chat::{ChatEntry, list_chats, message_table_name, quote_identifier};
 pub use error::{CoreError, Result};

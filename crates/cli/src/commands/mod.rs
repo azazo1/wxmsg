@@ -5,6 +5,7 @@
 
 pub mod messages;
 pub mod plain;
+pub mod recalls;
 pub mod sessions;
 mod table;
 

@@ -24,6 +24,9 @@ pub enum Command {
 
     /// 把加密库重建为明文副本, 用于排错与自检.
     Plain(PlainArgs),
+
+    /// 从 WAL 里找回被撤回 (被删除) 的消息.
+    Recalls(RecallsArgs),
 }
 
 /// 各子命令共用的参数.
@@ -91,9 +94,42 @@ pub struct PlainArgs {
     #[arg(long, value_name = "PATH")]
     pub out: PathBuf,
 
+    /// WAL 文件路径; 默认取与库同名的 `-wal`, 不存在则只解主库.
+    #[arg(long, value_name = "PATH")]
+    pub wal: Option<PathBuf>,
+
+    /// 只应用到 WAL 的第 N 个提交帧 (从 0 开始, 0 是最早的提交).
+    ///
+    /// 不指定时应用全部有效帧, 即当前状态。
+    #[arg(long, value_name = "N")]
+    pub commit: Option<usize>,
+
     /// 重建后与 SQLCipher 直连的结果逐表比对行数.
     ///
     /// 两边走的是不同的代码路径, 行数全部一致才能说明页格式与参数理解正确。
+    /// 只在应用全部帧时有意义 (SQLCipher 看到的是当前状态)。
     #[arg(long)]
     pub verify: bool,
+}
+
+/// `recalls` 子命令.
+#[derive(Debug, Args)]
+pub struct RecallsArgs {
+    /// 共用参数.
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// 只看某个会话, 值为内部 wxid.
+    #[arg(long, value_name = "WXID")]
+    pub chat: Option<String>,
+
+    /// WAL 文件路径; 默认取与库同名的 `-wal`.
+    ///
+    /// 被删消息的旧页版本就在这个文件里, 换一个 WAL 就等于换一个时间窗口。
+    #[arg(long, value_name = "PATH")]
+    pub wal: Option<std::path::PathBuf>,
+
+    /// 最多显示多少条 (按时间取最近的若干条); 0 表示全部.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub limit: usize,
 }

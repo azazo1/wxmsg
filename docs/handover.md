@@ -159,16 +159,22 @@ SQLCipher 4 标准格式, 已实测可稳定解密:
 
 **时窗限制 (重要)**
 
-- WAL 是固定 4 MB 的环形文件, 旧帧会被新事务覆盖
-- 实测另一个 6.5 小时前的撤回, 对应页**已不在当前 WAL 中**, 无法恢复
-- 因此架构上必须**持续留存 WAL 快照**, 而不是事后去挖
+实现阶段重新读了这个文件, 结论比早期更细:
+
+- WAL 是固定 4 MB 的**环形**文件, 里面往往同时躺着**好几代**帧: 当前代 (盐值与文件头一致)
+  与其它已被检查点冲刷过的旧代。旧代的文件头早已被覆盖, 但其帧字节仍在原处
+- 因此**不是整份 WAL 只剩下很少历史**, 而是能一次性看到若干代。实测 `message_1.db` 的 WAL
+  里有 9 代共 1018 帧, `message_0.db` 同样 1018 帧
+- 但覆盖是**按字节**发生的: 新帧不断写入, 旧代的字节迟早被冲掉。实测 `message_1.db` 的
+  WAL 里当时只剩 295 个不同的页, 上午那次撤回所在的页 (5063, 5231) **已经不在其中**
+- 结论不变: 事后去挖只能捡到剩下的, 要稳定还原必须**持续留存 WAL 快照**
 
 **尚未定论的一处**
 
 撤回究竟是"删除原行 + 插入通知行", 还是"把原行原地改写为通知"。
 两种解释都能说明"原行消失"与"旧内容留在 WAL"。
 建表语句为 `local_id INTEGER PRIMARY KEY AUTOINCREMENT` (编号不复用), 但两次实测都没观察到
-编号空缺, 二者存在矛盾。**实现前应做一次受控实验**: 发一条文字消息, 记下行号, 撤回, 再查行号
+编号空缺, 二者存在矛盾。**做一次受控实验即可定论**: 发一条文字消息, 记下行号, 撤回, 再查行号
 与 `sqlite_sequence`。
 
 ### 2.6 一次性抓取的工作形态
@@ -210,6 +216,16 @@ env HOME=<tmp>/home CFFIXED_USER_HOME=<tmp>/home \
 | 撤回通知 | `local_type = 10000`, 正文为 `revokemsg` 的 sysmsg XML |
 | 表结构 | `local_id, server_id, local_type, sort_seq, real_sender_id, create_time, status, upload_status, download_status, server_seq, origin_source, source, message_content, compress_content, packed_info_data, WCDB_CT_message_content, WCDB_CT_source` |
 | 联系人 | `contact.db` 的 `contact(username, alias, remark, nick_name)` |
+
+**直接解页时必须知道的几件事** (SQLCipher 接口读不到这些):
+
+- `local_id` 是 `INTEGER PRIMARY KEY`, 即 rowid 的别名。SQLite 在**记录里给这一列存的是
+  NULL**, 真实值只能从单元的行号取; 按记录取值会全表读成空
+- 一页的可用空间 = 页大小 - 保留区 = 4016 字节。叶页单元能整段放下的载荷上限是
+  `可用空间 - 35`, 超出后按 `minLeaf + (载荷 - minLeaf) % (可用空间 - 4)` 取局部分段,
+  且局部段最后 4 字节是溢出页号。解这类行要么跟随溢出链, 要么放弃该行
+- WAL 的校验和覆盖范围是 密文加 IV 再加页号小端 4 字节; 旧代的第一帧因为链的起点
+  (旧文件头) 已消失, 只能信任帧里记录的校验和
 
 ## 4. 技术选型
 
@@ -404,8 +420,8 @@ wxmsg sessions --db "<数据根>/db_storage/message/message_1.db" \
 | `justfile` | 完成 | 常用任务: 构建, 测试, 静态检查, 隐私扫描 |
 | `scripts/check-private.py` | 完成 | 提交前扫描个人信息与密钥; 专属敏感词在 `secrets/private-terms.txt` |
 | `LICENSE` | 完成 | MIT, 与 `Cargo.toml` 的 license 字段一致 |
-| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` `crypto` `verify` |
-| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `commands/{sessions,messages,plain,table}` |
+| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` `crypto` `verify` `wal` `btree` `image` `recall` |
+| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `commands/{sessions,messages,plain,recalls,table}` |
 | `secrets/` | 本地 | 19 个库密钥, 权限 0600, 已被 `.gitignore` 排除 |
 | `.references/` | 本地 | 上游项目源码与本地补丁 diff, REA 分析脚本, 已被 `.gitignore` 排除 |
 | `apps/desktop` | 空 | 未开始, 到 M6 再做 |
@@ -413,30 +429,41 @@ wxmsg sessions --db "<数据根>/db_storage/message/message_1.db" \
 依赖已由 `cargo add` 写入两个 `Cargo.toml`。首次构建要编译 OpenSSL 与 SQLCipher, 约数分钟;
 之后的增量构建是秒级。
 
-### M2 第一步: 页解密模块
+### M2 完成情况
 
-`core::crypto` 自己实现了 SQLCipher 的页解密 (AES-256-CBC 加 HMAC-SHA512 校验),
-`core::crypto::plaintext` 能把整库重建为明文, `core::verify` 负责与 SQLCipher 直连的结果
-逐表比对行数。自检命令与结果:
+M2 需要的四个模块都已落地:
 
-```shell
-wxmsg plain --db "<数据根>/db_storage/message/message_1.db" \
-  --keys secrets/all_keys.json --copy-to .tmp/db --out .tmp/plain-1.db --verify
-```
-
-| 检查项 | 结果 |
+| 模块 | 职责 |
 | --- | --- |
-| 解密页数 | 5282 |
-| 与 SQLCipher 直连比对 | 54 张表的行数完全一致 |
-| 耗时 | 约 2 秒 |
+| `core::crypto` | SQLCipher 页解密: AES-256-CBC 加 HMAC-SHA512 校验; `plaintext` 能把整库重建为明文 |
+| `core::wal` | WAL 头与帧解析, 逐帧校验和链; **按盐值分出多代**, 旧代同样可用 |
+| `core::btree` | 页头, 叶页单元, 溢出判定, varint 与记录解码; 内部页遍历收集叶页 |
+| `core::recall` | 定位每张表的叶页, 把主库与 WAL 各代的每一个页版本解成行, 与当前行集合做差分 |
 
-这一步的意义: 被撤回的原文只存在于 WAL 里被取代的帧, SQLCipher 的接口看不到它们,
-必须自己按页解密。现在这条路径已被自检证明与 SQLCipher 等价。
+两个自检与外测结果:
+
+| 检查 | 结果 |
+| --- | --- |
+| `plain --verify` (自己的解密对比 SQLCipher 直连) | 5286 页, 54 张表行数完全一致 |
+| `recalls` 对 `message_1.db` 的解码量 | 解出 35,490 个单元, 行号与 SQLite 的当前行集**零误报** |
+| `recalls` 对 `message_0.db` (180 MB, 123 张表) | 解出 241,192 个单元, 找回 1 条已从表中消失的消息 |
+| `recalls` 对 `message_0.db` 的耗时 | 约 33 秒 (主要是 39,213 个叶页的遍历) |
+
+找回的那一条是 2026-08-27 的"拍一拍"记录 (`local_id = 665`, 类型 49), 它已经不在当前表里,
+但内容从 WAL 第 9 代第 121 帧完整解出, 与当前表对照后判定为已删除行。也就是说**删除行还原的
+通路成立**, 只是当前这份 WAL 里已经找不到上午那次撤回所涉及的页。
 
 ### 下一步
 
-M2 继续: `core::wal` 解析 WAL 头与帧并按校验和链判定有效帧, `core::btree` 解出叶页里的行,
-`core::recall` 对每个页保留历史版本做行集差分, 从而还原被撤回消息的完整正文。
+M2 还差一次**现场验证**: 需要一条刚发出就被撤回的消息, 用 `recalls` 当场把原文取回来。
+做法是在微信里发一条消息 (文字或文件) 再撤回, 然后立刻:
+
+```shell
+wxmsg recalls --db "<数据根>/db_storage/message/message_1.db" \
+  --keys secrets/all_keys.json --copy-to .tmp/db --chat <该会话的内部 wxid>
+```
+
+若这一步通过, M2 收口, 随后进入 M3 (增量归档), 那也是解决"WAL 会被环形覆盖"的正解。
 
 判据: 对一条已知撤回的会话, 还原出被删消息的完整正文, 并与 2.5 节实测过的 `demo.txt`
 样例对照。

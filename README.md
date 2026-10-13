@@ -32,9 +32,16 @@ wxmsg messages --chat <内部 wxid> --db .tmp/db/message_1.db \
 # 把加密库重建为明文副本, 并与 SQLCipher 直连的结果逐表比对行数
 wxmsg plain --db <数据根>/db_storage/message/message_1.db \
   --keys secrets/all_keys.json --copy-to .tmp/db --out .tmp/plain.db --verify
+
+# 从 WAL 里找回被撤回 (被删除) 的消息
+wxmsg recalls --db <数据根>/db_storage/message/message_1.db \
+  --keys secrets/all_keys.json --copy-to .tmp/db --limit 20
 ```
 
 `plain` 的产物含完整聊天记录, 只用于排错与自检, 用完请删除。
+
+`recalls` 不依赖任何事前归档: 被删消息所在页的旧版本只要还在 WAL 文件里就能找回。WAL 是
+固定大小的环形文件, 越早的撤回越可能已经被覆盖, 所以要稳定还原仍然需要持续留存 (M3)。
 
 `--copy-to` 会先把库连同 WAL 复制到指定目录再打开, 避免直接读写微信正在使用的文件。
 密钥文件放在 `secrets/` 下, 不入库。

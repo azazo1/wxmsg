@@ -30,7 +30,7 @@ use crate::error::{CoreError, Result};
 
 pub mod plaintext;
 
-pub use plaintext::{RebuildReport, page_count, read_page, rebuild_plaintext};
+pub use plaintext::{PageReader, RebuildReport, page_count, read_page, rebuild_plaintext};
 
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
 type HmacSha512 = Hmac<Sha512>;
