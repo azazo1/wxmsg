@@ -45,3 +45,25 @@ sessions db *args:
 # 示例: just messages wxid_a1b2c3d4e5f60000 .tmp/db/message_1.db --limit 20
 messages chat db *args:
     cargo run -q -p wxmsg-cli -- messages --chat {{chat}} --db {{db}} --keys {{keys}} {{args}}
+
+# 从实时库 WAL 里找回被撤回的消息.
+# 示例: just recalls .tmp/db/message_1.db --limit 20
+recalls db *args:
+    cargo run -q -p wxmsg-cli -- recalls --db {{db}} --keys {{keys}} {{args}}
+
+# 从归档快照里找回被撤回的消息 (留多久就能回溯多久).
+# 示例: just recalls-archive --snapshot 1791885630
+recalls-archive *args:
+    cargo run -q -p wxmsg-cli -- recalls --archive "$HOME/Library/Application Support/wxmsg/archive" {{args}}
+
+# 取一次归档快照并裁剪.
+snap *args:
+    cargo run -q -p wxmsg-cli -- snap {{args}}
+
+# 常驻监听并按间隔取归档快照, Ctrl-C 结束.
+keep *args:
+    cargo run -q -p wxmsg-cli -- keep {{args}}
+
+# 查看当前生效的配置, 以及各路径最终落在哪里.
+show-config *args:
+    cargo run -q -p wxmsg-cli -- config {{args}}

@@ -4,6 +4,7 @@
 //! 命令行参数的定义在 [`crate::cli`], 这里只负责执行。
 
 pub mod archive;
+pub mod config;
 pub mod keep;
 pub mod messages;
 pub mod plain;
@@ -13,6 +14,7 @@ pub mod snap;
 mod table;
 
 use anyhow::Context;
+use wxmsg_core::config::Config;
 use wxmsg_core::{EncryptedStore, KeyStore};
 
 use crate::cli::CommonArgs;
@@ -65,16 +67,35 @@ pub(crate) fn format_size(bytes: u64) -> String {
 
 /// 加载密钥文件.
 ///
+/// 路径来源顺序: `--keys` > 配置文件 > `secrets/all_keys.json`。
 /// 密钥内容只由本程序读取, 不进入日志。
 pub(crate) fn load_keys(common: &CommonArgs) -> anyhow::Result<KeyStore> {
-    let path = common
-        .keys
-        .clone()
-        .unwrap_or_else(crate::paths::default_keys);
+    let path = match common.keys.clone() {
+        Some(path) => path,
+        None => load_config(common.config.as_deref())?
+            .keys_file()
+            .unwrap_or_else(crate::paths::default_keys),
+    };
     let keys =
         KeyStore::load(&path).with_context(|| format!("加载密钥文件失败: {}", path.display()))?;
     tracing::info!(count = keys.len(), path = %path.display(), "已加载密钥文件");
     Ok(keys)
+}
+
+/// 决定用哪个配置文件.
+pub(crate) fn config_path(
+    explicit: Option<&std::path::Path>,
+) -> anyhow::Result<std::path::PathBuf> {
+    match explicit {
+        Some(path) => Ok(path.to_path_buf()),
+        None => Config::default_path().context("读不到 HOME, 无法确定配置文件位置"),
+    }
+}
+
+/// 读取配置; 文件不存在时返回内置默认值.
+pub(crate) fn load_config(explicit: Option<&std::path::Path>) -> anyhow::Result<Config> {
+    let path = config_path(explicit)?;
+    Ok(Config::load(&path)?)
 }
 
 /// 决定要读取哪一个库文件: 指定 `--copy-to` 时先复制, 否则直接用原路径.

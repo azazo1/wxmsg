@@ -33,8 +33,10 @@ pub fn run(args: KeepArgs) -> anyhow::Result<()> {
         .watch(&job.source, RecursiveMode::Recursive)
         .with_context(|| format!("监听 {} 失败", job.source.display()))?;
 
-    let interval = Duration::from_secs(args.interval.max(1));
-    let debounce = Duration::from_secs(args.debounce);
+    let config = crate::commands::load_config(args.archive.config.as_deref())?;
+    let interval =
+        Duration::from_secs(args.interval.unwrap_or(config.archive.interval_secs).max(1));
+    let debounce = Duration::from_secs(args.debounce.unwrap_or(config.archive.debounce_secs));
     tracing::info!(
         source = %job.source.display(),
         archive = %job.archive.root().display(),

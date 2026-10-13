@@ -33,6 +33,9 @@ pub enum Command {
 
     /// 常驻监听, 按间隔取归档快照.
     Keep(KeepArgs),
+
+    /// 查看或初始化配置文件.
+    Config(ConfigArgs),
 }
 
 /// 各子命令共用的参数.
@@ -46,9 +49,13 @@ pub struct CommonArgs {
 
     /// 密钥文件 (JSON), 形如 {"message/message_1.db": {"enc_key": "..."}}.
     ///
-    /// 默认 `secrets/all_keys.json`。
+    /// 不指定时看配置文件, 再不行就用 `secrets/all_keys.json`。
     #[arg(long, value_name = "PATH")]
     pub keys: Option<PathBuf>,
+
+    /// 配置文件路径; 默认 `~/Library/Application Support/wxmsg/config.toml`.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
 
     /// 打开前先把库连同 WAL 复制到该目录.
     ///
@@ -155,9 +162,15 @@ pub struct RecallsArgs {
 }
 
 /// 归档相关参数, `snap` 与 `keep` 共用.
+///
+/// 每项都可以不写: 解析顺序是 **命令行 > 配置文件 > 内置默认**。
 #[derive(Debug, Args)]
 pub struct ArchiveArgs {
-    /// 账号目录; 不指定时自动探测.
+    /// 配置文件路径; 默认 `~/Library/Application Support/wxmsg/config.toml`.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
+    /// 账号目录; 不指定时看配置, 再不行就自动探测.
     #[arg(long, value_name = "DIR")]
     pub source: Option<PathBuf>,
 
@@ -170,12 +183,12 @@ pub struct ArchiveArgs {
     pub prefix: Vec<String>,
 
     /// 归档保留多少天.
-    #[arg(long, default_value_t = 7, value_name = "DAYS")]
-    pub keep_days: i64,
+    #[arg(long, value_name = "DAYS")]
+    pub keep_days: Option<i64>,
 
     /// 归档总量上限, 支持 K / M / G 后缀.
-    #[arg(long, default_value = "8G", value_name = "SIZE")]
-    pub max_bytes: String,
+    #[arg(long, value_name = "SIZE")]
+    pub max_bytes: Option<String>,
 
     /// 只取快照, 不做保留策略裁剪.
     #[arg(long)]
@@ -202,14 +215,30 @@ pub struct KeepArgs {
     pub archive: ArchiveArgs,
 
     /// 两次快照之间的最小间隔 (秒).
-    #[arg(long, default_value_t = 300, value_name = "SECS")]
-    pub interval: u64,
+    #[arg(long, value_name = "SECS")]
+    pub interval: Option<u64>,
 
     /// 最后一次文件变动之后静置多久才取快照 (秒).
-    #[arg(long, default_value_t = 3, value_name = "SECS")]
-    pub debounce: u64,
+    #[arg(long, value_name = "SECS")]
+    pub debounce: Option<u64>,
 
     /// 只取一次快照就退出, 便于交给 launchd 之类定时器调用.
     #[arg(long)]
     pub once: bool,
+}
+
+/// `config` 子命令.
+#[derive(Debug, Args)]
+pub struct ConfigArgs {
+    /// 配置文件路径; 默认 `~/Library/Application Support/wxmsg/config.toml`.
+    #[arg(long, value_name = "PATH")]
+    pub config: Option<PathBuf>,
+
+    /// 把当前生效的配置写到文件里 (文件已存在时不覆盖).
+    #[arg(long)]
+    pub init: bool,
+
+    /// 以 JSON 输出.
+    #[arg(long)]
+    pub json: bool,
 }

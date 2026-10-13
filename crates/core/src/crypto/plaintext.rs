@@ -115,18 +115,19 @@ impl PageReader {
         let mut buffer = vec![0u8; page_size];
         {
             let mut file = self.file.borrow_mut();
-            file.seek(SeekFrom::Start((page_number - 1) * page_size as u64))
+            crate::io::retry(|| file.seek(SeekFrom::Start((page_number - 1) * page_size as u64)))
                 .map_err(|error| CoreError::Io {
-                    path: self.path.clone(),
-                    source: error,
-                })?;
+                path: self.path.clone(),
+                source: error,
+            })?;
             let mut filled = 0;
             while filled < page_size {
-                let read = file
-                    .read(&mut buffer[filled..])
-                    .map_err(|error| CoreError::Io {
-                        path: self.path.clone(),
-                        source: error,
+                let read =
+                    crate::io::retry(|| file.read(&mut buffer[filled..])).map_err(|error| {
+                        CoreError::Io {
+                            path: self.path.clone(),
+                            source: error,
+                        }
                     })?;
                 if read == 0 {
                     break;

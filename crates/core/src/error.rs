@@ -119,6 +119,15 @@ pub enum CoreError {
     /// 归档相关错误.
     #[error("归档错误: {0}")]
     Archive(String),
+
+    /// 配置相关错误.
+    #[error("配置文件 {path} 有问题: {reason}")]
+    Config {
+        /// 配置文件路径.
+        path: PathBuf,
+        /// 具体原因.
+        reason: String,
+    },
 }
 
 /// 核心库结果类型.

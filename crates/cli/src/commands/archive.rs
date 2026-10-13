@@ -28,13 +28,20 @@ pub struct ArchiveJob {
 impl ArchiveJob {
     /// 由命令行参数组装.
     pub fn from_args(args: &ArchiveArgs) -> anyhow::Result<Self> {
+        let config = crate::commands::load_config(args.config.as_deref())?;
         let source = match args.source.as_deref() {
             Some(path) => paths::normalize_source(path),
-            None => paths::account_dir()?,
+            None => match config.source_dir() {
+                Some(dir) => paths::normalize_source(&dir),
+                None => paths::account_dir()?,
+            },
         };
         let root = match args.archive.as_deref() {
             Some(path) => path.to_path_buf(),
-            None => paths::default_archive()?,
+            None => match config.archive_dir() {
+                Some(dir) => dir,
+                None => paths::default_archive()?,
+            },
         };
         let archive = Archive::open(&root)
             .with_context(|| format!("打开归档目录失败: {}", root.display()))?;
@@ -42,12 +49,19 @@ impl ArchiveJob {
         let mut filter = Filter::default();
         if !args.prefix.is_empty() {
             filter.prefixes = args.prefix.clone();
+        } else if !config.archive.prefixes.is_empty() {
+            filter.prefixes = config.archive.prefixes.clone();
         }
 
+        let keep_days = args.keep_days.unwrap_or(config.archive.keep_days);
+        let max_bytes_text = args
+            .max_bytes
+            .clone()
+            .unwrap_or_else(|| config.archive.max_bytes.clone());
         let retention = Retention {
-            keep_days: args.keep_days,
-            max_bytes: parse_size(&args.max_bytes).with_context(|| {
-                format!("看不懂的容量写法: {}; 支持 K / M / G 后缀", args.max_bytes)
+            keep_days,
+            max_bytes: parse_size(&max_bytes_text).with_context(|| {
+                format!("看不懂的容量写法: {max_bytes_text}; 支持 K / M / G 后缀")
             })?,
         };
 

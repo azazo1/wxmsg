@@ -8,10 +8,12 @@
 pub mod archive;
 pub mod btree;
 pub mod chat;
+pub mod config;
 pub mod crypto;
 pub mod error;
 mod hex;
 pub mod image;
+pub mod io;
 pub mod keys;
 pub mod message;
 pub mod recall;

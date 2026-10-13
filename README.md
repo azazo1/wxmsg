@@ -47,6 +47,13 @@ wxmsg snap --once
 wxmsg recalls --archive ~/Library/Application\ Support/wxmsg/archive --limit 20
 ```
 
+# 查看当前生效的配置, 以及各路径最终落在哪里
+wxmsg config
+
+# 把默认配置写到 ~/Library/Application Support/wxmsg/config.toml
+wxmsg config --init
+```
+
 `plain` 的产物含完整聊天记录, 只用于排错与自检, 用完请删除。
 
 `recalls` 不依赖任何事前归档: 被删消息所在页的旧版本只要还在 WAL 文件里就能找回。WAL 是
