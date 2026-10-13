@@ -42,6 +42,6 @@ sessions db *args:
     cargo run -q -p wxmsg-cli -- sessions --db {{db}} --keys {{keys}} {{args}}
 
 # 读取某个会话的最近消息.
-# 示例: just messages wxid_aaaaaaaaaaaaaa .tmp/db/message_1.db --limit 20
+# 示例: just messages wxid_a1b2c3d4e5f60000 .tmp/db/message_1.db --limit 20
 messages chat db *args:
     cargo run -q -p wxmsg-cli -- messages --chat {{chat}} --db {{db}} --keys {{keys}} {{args}}

@@ -27,6 +27,7 @@ from pathlib import Path
 #   分析的是同一个版本.
 ALLOWED_VALUES = {
     "wxid_a1b2c3d4e5f60000",
+    "wxid_aaaaaaaaaaaaaa",
     "764966cdaaf945bc8b23968bb7b3dca3cdc4067e2891a38e28c7556788e0682c",
     "f7f9b8044c911e674d5a7c8b377f410a2784c07d67d80b5bce188ed221b199be",
 }
@@ -131,8 +132,27 @@ def scan_workspace(root: Path, patterns) -> int:
     return total
 
 
+# 补丁流里属于元信息, 不是文件内容.
+PATCH_META_PREFIXES = (
+    "diff --git ",
+    "index ",
+    "@@",
+    "+++ ",
+    "--- ",
+    "new file mode ",
+    "deleted file mode ",
+    "similarity index ",
+    "rename from ",
+    "rename to ",
+    "Binary files ",
+)
+
+
 def scan_history(root: Path, patterns) -> int:
-    """扫描全部历史提交的补丁, 用于确认没有敏感内容进过历史."""
+    """扫描全部历史提交的补丁, 用于确认没有敏感内容进过历史.
+
+    按补丁里的文件路径切换模式集合, 这样 `Cargo.lock` 的依赖校验和不会被误报.
+    """
     result = subprocess.run(
         ["git", "log", "--all", "--patch", "--no-color", "--unified=0"],
         cwd=root,
@@ -143,14 +163,22 @@ def scan_history(root: Path, patterns) -> int:
         # 还没有任何提交时 git log 会报错, 这不算问题.
         print("历史为空, 无需扫描")
         return 0
+
     total = 0
-
-    def report(number, label, hit):
-        nonlocal total
-        total += 1
-        print(f"history:{number}: {label}: {hit}")
-
-    scan_lines(result.stdout, patterns, report)
+    current = Path("(未知)")
+    for number, line in enumerate(result.stdout.splitlines(), start=1):
+        if line.startswith("diff --git "):
+            parts = line.split(" ")
+            current = Path(parts[3][2:]) if len(parts) > 3 and parts[3].startswith("b/") else Path("(未知)")
+            continue
+        if line.startswith(PATCH_META_PREFIXES):
+            continue
+        for label, pattern in patterns_for(current, patterns):
+            for match in pattern.finditer(line):
+                if match.group(0) in ALLOWED_VALUES:
+                    continue
+                total += 1
+                print(f"history:{number}: {current}: {label}: {match.group(0)}")
     return total
 
 
