@@ -5,6 +5,7 @@
 
 pub mod archive;
 pub mod config;
+pub mod export;
 pub mod keep;
 pub mod messages;
 pub mod plain;

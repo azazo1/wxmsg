@@ -64,6 +64,11 @@ snap *args:
 keep *args:
     cargo run -q -p wxmsg-cli -- keep {{args}}
 
+# 导出会话为 Markdown.
+# 示例: just export .tmp/db/message_1.db .tmp/out
+export db out *args:
+    cargo run -q -p wxmsg-cli -- export --db {{db}} --keys {{keys}} --out {{out}} {{args}}
+
 # 查看当前生效的配置, 以及各路径最终落在哪里.
 show-config *args:
     cargo run -q -p wxmsg-cli -- config {{args}}

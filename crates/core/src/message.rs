@@ -33,6 +33,11 @@ pub struct RawMessage {
     pub content: Option<Vec<u8>>,
     /// 正文的压缩标记.
     pub content_flag: Option<i64>,
+    /// `real_sender_id`: 本分片 `Name2Id` 的行号, 指向真正的发送者.
+    ///
+    /// 正文里的 `发送者:` 前缀**不可靠**: 一对一聊天里根本没有这个前缀。要判断一条消息是谁
+    /// 发的, 应当看这个字段。
+    pub sender_id: Option<i64>,
 }
 
 impl RawMessage {
@@ -105,12 +110,7 @@ pub fn recent_messages(
         return Ok(Vec::new());
     }
 
-    let has_flag = has_column(store, &table, "WCDB_CT_message_content")?;
-    let columns = if has_flag {
-        "local_id, local_type, create_time, message_content, WCDB_CT_message_content"
-    } else {
-        "local_id, local_type, create_time, message_content, NULL"
-    };
+    let columns = message_columns(store, &table)?;
     let sql = format!(
         "SELECT {columns} FROM {} ORDER BY create_time DESC, local_id DESC LIMIT ?1",
         quote_identifier(&table)
@@ -124,6 +124,7 @@ pub fn recent_messages(
             create_time: row.get(2)?,
             content: read_content(row, 3)?,
             content_flag: row.get(4)?,
+            sender_id: row.get(5)?,
         })
     })?;
 
@@ -132,6 +133,64 @@ pub fn recent_messages(
         messages.push(row?);
     }
     Ok(messages)
+}
+
+/// 按时间顺序遍历整个会话的消息.
+///
+/// 全量导出一个会话可能有几十万条, 因此不一次性装进内存, 而是逐条交给调用方处理。
+/// 返回处理过的条数。
+pub fn for_each_message(
+    store: &EncryptedStore,
+    username: &str,
+    mut handler: impl FnMut(&RawMessage) -> Result<()>,
+) -> Result<usize> {
+    let table = message_table_name(username);
+    if !store.has_table(&table)? {
+        return Ok(0);
+    }
+
+    let columns = message_columns(store, &table)?;
+    let sql = format!(
+        "SELECT {columns} FROM {} ORDER BY create_time ASC, local_id ASC",
+        quote_identifier(&table)
+    );
+
+    let mut statement = store.connection().prepare(&sql)?;
+    let mut rows = statement.query([])?;
+    let mut count = 0;
+    while let Some(row) = rows.next()? {
+        let message = RawMessage {
+            local_id: row.get(0)?,
+            local_type: row.get(1)?,
+            create_time: row.get(2)?,
+            content: read_content(row, 3)?,
+            content_flag: row.get(4)?,
+            sender_id: row.get(5)?,
+        };
+        handler(&message)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// 读一条消息需要的列.
+///
+/// 固定取前 6 列: 行号, 类型, 时间, 正文, 压缩标记, 发送者编号。缺列时用 `NULL` 顶上,
+/// 免得为不同版本的表结构写两套读取代码。
+fn message_columns(store: &EncryptedStore, table: &str) -> Result<String> {
+    let flag = if has_column(store, table, "WCDB_CT_message_content")? {
+        "WCDB_CT_message_content"
+    } else {
+        "NULL"
+    };
+    let sender = if has_column(store, table, "real_sender_id")? {
+        "real_sender_id"
+    } else {
+        "NULL"
+    };
+    Ok(format!(
+        "local_id, local_type, create_time, message_content, {flag}, {sender}"
+    ))
 }
 
 /// 按 SQLite 的动态类型读取一列, 统一得到原始字节.
@@ -183,6 +242,7 @@ mod tests {
             create_time: 0,
             content: None,
             content_flag: None,
+            sender_id: None,
         };
         assert_eq!(message.real_type(), 10_000);
         assert!(message.is_recall_notice());

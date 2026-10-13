@@ -77,6 +77,8 @@ struct TableInfo {
     local_type: usize,
     content: usize,
     content_flag: Option<usize>,
+    /// `real_sender_id` 的位置; 老表结构里可能没有.
+    sender: Option<usize>,
 }
 
 /// 主库里的一行历史版本.
@@ -338,6 +340,7 @@ fn table_info(store: &EncryptedStore, table: &str) -> Result<Option<TableInfo>> 
         local_type,
         content,
         content_flag: position("WCDB_CT_message_content"),
+        sender: position("real_sender_id"),
     }))
 }
 
@@ -355,24 +358,25 @@ fn current_rowids(store: &EncryptedStore, table: &TableInfo) -> Result<BTreeSet<
 
 /// 当前表里的撤回通知 (真实类型 10000).
 fn current_notices(store: &EncryptedStore, table: &TableInfo) -> Result<Vec<RawMessage>> {
-    let columns = if table.content_flag.is_some() {
-        format!(
-            "{}, {}, {}, {}, {}",
-            quote_identifier("local_id"),
-            quote_identifier("local_type"),
-            quote_identifier("create_time"),
-            quote_identifier("message_content"),
-            quote_identifier("WCDB_CT_message_content")
-        )
-    } else {
-        format!(
-            "{}, {}, {}, {}, NULL",
-            quote_identifier("local_id"),
-            quote_identifier("local_type"),
-            quote_identifier("create_time"),
-            quote_identifier("message_content")
-        )
-    };
+    let mut columns = format!(
+        "{}, {}, {}, {}, {}",
+        quote_identifier("local_id"),
+        quote_identifier("local_type"),
+        quote_identifier("create_time"),
+        quote_identifier("message_content"),
+        // 缺列时用 NULL 顶上, 保持后面按固定下标取值。
+        table
+            .content_flag
+            .map(|_| quote_identifier("WCDB_CT_message_content"))
+            .unwrap_or_else(|| "NULL".to_owned())
+    );
+    columns.push_str(", ");
+    columns.push_str(
+        &table
+            .sender
+            .map(|_| quote_identifier("real_sender_id"))
+            .unwrap_or_else(|| "NULL".to_owned()),
+    );
     let sql = format!(
         "SELECT {columns} FROM {} WHERE ({} & 4294967295) = 10000 ORDER BY create_time",
         quote_identifier(&table.name),
@@ -387,6 +391,7 @@ fn current_notices(store: &EncryptedStore, table: &TableInfo) -> Result<Vec<RawM
             create_time: row.get(2)?,
             content: read_bytes(row, 3)?,
             content_flag: row.get(4)?,
+            sender_id: row.get(5)?,
         })
     })?;
 
@@ -429,6 +434,10 @@ fn to_message(table: &TableInfo, rowid: i64, values: &[btree::Value]) -> Option<
         .content_flag
         .and_then(|index| values.get(index))
         .and_then(btree::Value::as_integer);
+    let sender_id = table
+        .sender
+        .and_then(|index| values.get(index))
+        .and_then(btree::Value::as_integer);
 
     Some(RawMessage {
         local_id,
@@ -436,6 +445,7 @@ fn to_message(table: &TableInfo, rowid: i64, values: &[btree::Value]) -> Option<
         create_time,
         content,
         content_flag,
+        sender_id,
     })
 }
 

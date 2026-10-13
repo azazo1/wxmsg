@@ -36,6 +36,9 @@ pub enum Command {
 
     /// 查看或初始化配置文件.
     Config(ConfigArgs),
+
+    /// 把会话导出成 Markdown, JSON 或 CSV.
+    Export(ExportArgs),
 }
 
 /// 各子命令共用的参数.
@@ -241,4 +244,40 @@ pub struct ConfigArgs {
     /// 以 JSON 输出.
     #[arg(long)]
     pub json: bool,
+}
+
+/// `export` 子命令.
+#[derive(Debug, Args)]
+pub struct ExportArgs {
+    /// 共用参数.
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// 输出目录.
+    #[arg(long, value_name = "DIR")]
+    pub out: PathBuf,
+
+    /// 输出格式: `md`, `json` 或 `csv`.
+    #[arg(long, default_value = "md", value_name = "FORMAT")]
+    pub format: String,
+
+    /// 只导出这些会话 (内部 wxid), 可重复; 不指定时导出全部会话.
+    #[arg(long = "chat", value_name = "WXID")]
+    pub chats: Vec<String>,
+
+    /// 账号目录, 用于查找媒体文件.
+    ///
+    /// 不指定时看配置, 再不行就从库的路径往上推 (含 `db_storage` 的那一层)。
+    #[arg(long, value_name = "DIR")]
+    pub source: Option<PathBuf>,
+
+    /// 不复制媒体文件, 只在正文里保留一行说明.
+    #[arg(long)]
+    pub no_media: bool,
+
+    /// 一并写出找回的撤回消息 (按时间插回原处并标注).
+    ///
+    /// 需要 `--chat`, 且会明显变慢, 因为要逐个页版本比对。
+    #[arg(long)]
+    pub with_revoked: bool,
 }

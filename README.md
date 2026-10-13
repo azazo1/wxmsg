@@ -45,6 +45,12 @@ wxmsg snap --once
 
 # 从归档快照里找回 (留多久就能回溯多久)
 wxmsg recalls --archive ~/Library/Application\ Support/wxmsg/archive --limit 20
+
+# 导出会话 (Markdown / JSON / CSV), 媒体文件一并复制到导出目录的 media/ 下
+wxmsg export --db <数据根>/db_storage/message/message_1.db --out ./导出 --format md
+
+# 导出时把撤回的消息按时间插回原处并标注
+wxmsg export --db <数据根>/db_storage/message/message_1.db --out ./导出 --chat <wxid> --with-revoked
 ```
 
 # 查看当前生效的配置, 以及各路径最终落在哪里

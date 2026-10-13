@@ -216,6 +216,26 @@ env HOME=<tmp>/home CFFIXED_USER_HOME=<tmp>/home \
 | 撤回通知 | `local_type = 10000`, 正文为 `revokemsg` 的 sysmsg XML |
 | 表结构 | `local_id, server_id, local_type, sort_seq, real_sender_id, create_time, status, upload_status, download_status, server_seq, origin_source, source, message_content, compress_content, packed_info_data, WCDB_CT_message_content, WCDB_CT_source` |
 | 联系人 | `contact.db` 的 `contact(username, alias, remark, nick_name)` |
+| 发送者 | **只能看 `real_sender_id`**: 它是本分片 `Name2Id` 的行号 |
+| 资源索引 | `message_resource.db` 的 `MessageResourceInfo` / `MessageResourceDetail` 只有体积与状态, **没有文件路径** |
+
+**发送者不能从正文里猜** (实测踩过):
+
+正文里的 `发送者:` 前缀只在一部分消息里存在, **一对一聊天根本没有这个前缀**。
+`real_sender_id` 才是可靠来源, 换成 wxid 之后再去 `contact` 表查显示名。
+本用户自己发的消息, `real_sender_id` 指向 `Name2Id` 里代表本人的那一行。
+
+**媒体文件的位置规律** (导出时用):
+
+| 类型 | 位置 |
+| --- | --- |
+| 文件 | `msg/file/<年-月>/<原文件名>` |
+| 图片缩略图 | `msg/attach/<会话 wxid 的 md5>/<年-月>/Img/<编号>_<时间>_t.dat` |
+| 视频封面 | `msg/video/<年-月>/<md5>_thumb.jpg` |
+
+图片那一条要留个心眼: `<编号>` **不总是消息行号**, 有些文件用的是与消息里 `md5` 无关的另一串
+哈希。因此图片只在三种候选都试过之后才认定, 试不到就只写 `[图片]`, 不拿同目录的其它文件顶替
+(宁可缺, 不可错)。文件附件按"名字加月份"定位, 命中率很高。
 
 **直接解页时必须知道的几件事** (SQLCipher 接口读不到这些):
 
@@ -495,6 +515,26 @@ M3 要解决的是 M2 的软肋: WAL 是环形文件, 事后去挖只能捡到�
 | `archive.*` | 保留天数, 总量上限, 快照间隔, 去抖秒数, 归档范围 |
 
 `wxmsg config` 把当前生效的配置与解析后的实际路径一起打印出来, `--init` 写默认配置文件。
+
+### M7 完成情况
+
+| 模块 | 职责 |
+| --- | --- |
+| `core::contact` | 读 `contact.db`, 把 wxid 换成人看得懂的名字 (备注 > 昵称 > 微信号 > wxid) |
+| `core::media` | 按上面的规律定位媒体文件 |
+| `core::export` | 把消息归一到统一结构, 再按 Markdown / JSON / CSV 写出 |
+| `wxmsg export` | 命令行入口, `--with-revoked` 时把撤回记录按时间插回原处 |
+
+三种格式共用同一套"什么算图片, 什么算文件"的判断, 因此不会互相跑偏。撤回的消息写成
+`### 时间 发送者 类型 [撤回]`, 一眼能分辨。
+
+实测 (真实数据):
+
+| 检查 | 结果 |
+| --- | --- |
+| 单个会话 1346 条, CSV | 发送者全部解析成人名 |
+| 8 个会话 30012 条, Markdown | 复制出 18 个文件附件 (mp3, zip, apk), 按名字与月份定位 |
+| 一对一与群聊 | 发送者分别显示为联系人与群成员名 |
 
 ### 下一步
 
