@@ -43,5 +43,6 @@ fn run(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         Command::Sessions(args) => commands::sessions::run(args),
         Command::Messages(args) => commands::messages::run(args),
+        Command::Plain(args) => commands::plain::run(args),
     }
 }

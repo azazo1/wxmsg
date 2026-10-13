@@ -89,7 +89,7 @@ pub fn list_chats(store: &EncryptedStore) -> Result<Vec<ChatEntry>> {
 }
 
 /// 把标识符用双引号包起来, 避免表名中的特殊字符影响语句解析.
-pub(crate) fn quote_identifier(name: &str) -> String {
+pub fn quote_identifier(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 

@@ -68,10 +68,16 @@ SQLCipher 4 标准格式, 已实测可稳定解密:
 | 预留区 | 末 80 字节 = IV 16 字节 + HMAC 64 字节 |
 | 密钥 | 每库独立 32 字节原始密钥 (直接作为 AES key, 不经 PBKDF2) |
 | 库盐值 | 页 1 的前 16 字节 |
-| HMAC | HMAC-SHA512, 覆盖 (页密文 + 页号小端 4 字节), 页 1 额外覆盖前 16 字节 |
-| mac key | `PBKDF2-HMAC-SHA512(enc_key, salt XOR 0x3a..., 2 轮, 32 字节)` |
+| HMAC | HMAC-SHA512, 覆盖 密文 + IV + 页号小端 4 字节 (页 1 的盐值**不**参与) |
+| mac key | `PBKDF2-HMAC-SHA512(enc_key, salt XOR 0x3a, 2 轮, 32 字节)`, 轮数取 SQLCipher 的 `fast_kdf_iter` |
 
-解密步骤: 取页的最后 80 字节中的前 16 字节作 IV, 用密钥解 `page[0..4096-80]`; 页 1 需从偏移 16 开始 (前 16 字节是盐值)。
+解密步骤: 取页的最后 80 字节中的前 16 字节作 IV, 用密钥解 `page[0..4096-80]`; 页 1 的密文从
+偏移 16 开始 (前 16 字节是盐值), 且明文的前 16 字节由 SQLCipher 固定补回为
+`SQLite format 3\0`, 不参与加密。
+
+以上参数在实现时重新核对过 SQLCipher 源码 (bundled-sqlcipher 里的 `sqlite3.c`, 函数
+`sqlcipher_page_hmac` 与 `sqlcipher_cipher_ctx_key_derive`), 并用真实库的 5282 页做过
+逐表行数比对。**早期台账里"页 1 额外覆盖前 16 字节"的说法是错的**, 以本节为准。
 
 ### 2.4 密钥从哪里来
 
@@ -398,8 +404,8 @@ wxmsg sessions --db "<数据根>/db_storage/message/message_1.db" \
 | `justfile` | 完成 | 常用任务: 构建, 测试, 静态检查, 隐私扫描 |
 | `scripts/check-private.py` | 完成 | 提交前扫描个人信息与密钥; 专属敏感词在 `secrets/private-terms.txt` |
 | `LICENSE` | 完成 | MIT, 与 `Cargo.toml` 的 license 字段一致 |
-| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` |
-| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `commands/{sessions,messages,table}` |
+| `crates/core/**` | **已编译, 已验证** | `hex` `error` `keys` `store` `chat` `message` `crypto` `verify` |
+| `crates/cli/**` | **已编译, 已验证** | `main` `cli` `commands/{sessions,messages,plain,table}` |
 | `secrets/` | 本地 | 19 个库密钥, 权限 0600, 已被 `.gitignore` 排除 |
 | `.references/` | 本地 | 上游项目源码与本地补丁 diff, REA 分析脚本, 已被 `.gitignore` 排除 |
 | `apps/desktop` | 空 | 未开始, 到 M6 再做 |
@@ -407,11 +413,30 @@ wxmsg sessions --db "<数据根>/db_storage/message/message_1.db" \
 依赖已由 `cargo add` 写入两个 `Cargo.toml`。首次构建要编译 OpenSSL 与 SQLCipher, 约数分钟;
 之后的增量构建是秒级。
 
+### M2 第一步: 页解密模块
+
+`core::crypto` 自己实现了 SQLCipher 的页解密 (AES-256-CBC 加 HMAC-SHA512 校验),
+`core::crypto::plaintext` 能把整库重建为明文, `core::verify` 负责与 SQLCipher 直连的结果
+逐表比对行数。自检命令与结果:
+
+```shell
+wxmsg plain --db "<数据根>/db_storage/message/message_1.db" \
+  --keys secrets/all_keys.json --copy-to .tmp/db --out .tmp/plain-1.db --verify
+```
+
+| 检查项 | 结果 |
+| --- | --- |
+| 解密页数 | 5282 |
+| 与 SQLCipher 直连比对 | 54 张表的行数完全一致 |
+| 耗时 | 约 2 秒 |
+
+这一步的意义: 被撤回的原文只存在于 WAL 里被取代的帧, SQLCipher 的接口看不到它们,
+必须自己按页解密。现在这条路径已被自检证明与 SQLCipher 等价。
+
 ### 下一步
 
-**M2**: `core::recall` 从 WAL 历史帧还原一条真实撤回的原文。做法见 2.5 节 (逐帧读 WAL,
-按页号分组保留历史版本, 再解页内的 zstd 流)。现在可以直接在已打开的 SQLCipher 连接上读页,
-不必自己拼页。
+M2 继续: `core::wal` 解析 WAL 头与帧并按校验和链判定有效帧, `core::btree` 解出叶页里的行,
+`core::recall` 对每个页保留历史版本做行集差分, 从而还原被撤回消息的完整正文。
 
 判据: 对一条已知撤回的会话, 还原出被删消息的完整正文, 并与 2.5 节实测过的 `demo.txt`
 样例对照。

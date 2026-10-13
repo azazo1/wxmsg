@@ -4,6 +4,7 @@
 //! 命令行参数的定义在 [`crate::cli`], 这里只负责执行。
 
 pub mod messages;
+pub mod plain;
 pub mod sessions;
 mod table;
 
@@ -25,11 +26,10 @@ pub(crate) fn format_time(unix: Option<i64>) -> String {
     }
 }
 
-/// 按命令行参数准备一个已能读取的库连接.
+/// 加载密钥文件.
 ///
-/// 顺序是: 加载密钥 -> 可选地复制库副本 -> 用密钥打开。
-/// 密钥文件只由本程序读取, 其中的内容不进入日志。
-pub(crate) fn open_store(common: &CommonArgs) -> anyhow::Result<EncryptedStore> {
+/// 密钥内容只由本程序读取, 不进入日志。
+pub(crate) fn load_keys(common: &CommonArgs) -> anyhow::Result<KeyStore> {
     let keys = KeyStore::load(&common.keys)
         .with_context(|| format!("加载密钥文件失败: {}", common.keys.display()))?;
     tracing::info!(
@@ -37,8 +37,12 @@ pub(crate) fn open_store(common: &CommonArgs) -> anyhow::Result<EncryptedStore> 
         path = %common.keys.display(),
         "已加载密钥文件"
     );
+    Ok(keys)
+}
 
-    let path = match common.copy_to.as_deref() {
+/// 决定要读取哪一个库文件: 指定 `--copy-to` 时先复制, 否则直接用原路径.
+pub(crate) fn prepare_path(common: &CommonArgs) -> anyhow::Result<std::path::PathBuf> {
+    match common.copy_to.as_deref() {
         Some(dir) => {
             let copied = wxmsg_core::copy_database(&common.db, dir)
                 .with_context(|| format!("复制库失败: {}", common.db.display()))?;
@@ -47,13 +51,21 @@ pub(crate) fn open_store(common: &CommonArgs) -> anyhow::Result<EncryptedStore> 
                 copy = %copied.display(),
                 "已复制库副本, 后续只读写副本"
             );
-            copied
+            Ok(copied)
         }
         None => {
             tracing::warn!("未指定 --copy-to, 直接打开原始库; 微信正在写入时结果可能不一致");
-            common.db.clone()
+            Ok(common.db.clone())
         }
-    };
+    }
+}
+
+/// 按命令行参数准备一个已能读取的库连接.
+///
+/// 顺序是: 加载密钥 -> 可选地复制库副本 -> 用密钥打开。
+pub(crate) fn open_store(common: &CommonArgs) -> anyhow::Result<EncryptedStore> {
+    let keys = load_keys(common)?;
+    let path = prepare_path(common)?;
 
     let store = EncryptedStore::open_with_keys(&path, &keys)
         .with_context(|| format!("打开库失败: {}", path.display()))?;

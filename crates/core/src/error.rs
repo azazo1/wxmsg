@@ -63,6 +63,21 @@ pub enum CoreError {
     /// 正文解压失败.
     #[error("正文解压失败")]
     Decompress(#[source] std::io::Error),
+
+    /// 页长度与加密参数不符.
+    #[error("页 {page} 长度异常: 期望 {expected} 字节, 实际 {actual} 字节")]
+    PageSize {
+        /// 页号.
+        page: u64,
+        /// 按参数应有的长度.
+        expected: usize,
+        /// 实际长度.
+        actual: usize,
+    },
+
+    /// 页解密失败.
+    #[error("{0}")]
+    Cipher(#[from] crate::crypto::CipherError),
 }
 
 /// 核心库结果类型.

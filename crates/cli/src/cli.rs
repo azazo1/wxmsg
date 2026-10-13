@@ -21,6 +21,9 @@ pub enum Command {
 
     /// 读取某个会话的最近消息.
     Messages(MessagesArgs),
+
+    /// 把加密库重建为明文副本, 用于排错与自检.
+    Plain(PlainArgs),
 }
 
 /// 各子命令共用的参数.
@@ -75,4 +78,22 @@ pub struct MessagesArgs {
     /// 最多显示多少条.
     #[arg(long, default_value_t = 20, value_name = "N")]
     pub limit: usize,
+}
+
+/// `plain` 子命令.
+#[derive(Debug, Args)]
+pub struct PlainArgs {
+    /// 共用参数.
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// 明文副本的输出路径.
+    #[arg(long, value_name = "PATH")]
+    pub out: PathBuf,
+
+    /// 重建后与 SQLCipher 直连的结果逐表比对行数.
+    ///
+    /// 两边走的是不同的代码路径, 行数全部一致才能说明页格式与参数理解正确。
+    #[arg(long)]
+    pub verify: bool,
 }

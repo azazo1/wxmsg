@@ -28,7 +28,13 @@ wxmsg sessions --db <数据根>/db_storage/message/message_1.db \
 # 读取某个会话的最近消息
 wxmsg messages --chat <内部 wxid> --db .tmp/db/message_1.db \
   --keys secrets/all_keys.json --limit 20
+
+# 把加密库重建为明文副本, 并与 SQLCipher 直连的结果逐表比对行数
+wxmsg plain --db <数据根>/db_storage/message/message_1.db \
+  --keys secrets/all_keys.json --copy-to .tmp/db --out .tmp/plain.db --verify
 ```
+
+`plain` 的产物含完整聊天记录, 只用于排错与自检, 用完请删除。
 
 `--copy-to` 会先把库连同 WAL 复制到指定目录再打开, 避免直接读写微信正在使用的文件。
 密钥文件放在 `secrets/` 下, 不入库。
