@@ -312,6 +312,15 @@ sidecar/hook.js  Frida 钩子脚本
 建议从 M1 开始: 它直接验证"SQLCipher 直连"这个核心假设, 失败则需回到手工解密方案。
 **M1 已于 2026-10-13 验证通过**, 见 12 节。
 
+实现阶段与这张表有三处出入, 都已记在 12 节:
+
+- 密钥抓取放在了 `crates/cli` 的 `capture` 子命令里, 没有单独开 `crates/capture`。抓取需要
+  的只是"复制副本, 重定向家目录, 调起 sidecar, 再匹配密钥", 放进已有的命令行入口反而少一层
+- M5 的子命令不止四个: 除 `sessions` `messages` `plain` `recalls` 外, 还有 `snap` `keep`
+  `export` `config` `capture`
+- 导出的目标格式是 Markdown, JSON 与 CSV, 没有做 HTML。媒体文件复制到导出目录, 由 Markdown
+  的相对链接引用, 用编辑器看即可
+
 ## 7. 未决问题
 
 1. 密钥轮换的触发条件与检测方式 (已知: 更新, 切号, 记录迁移; 检测: HMAC 校验首页)
@@ -395,6 +404,33 @@ WKWebView。
 若 M6 之前需求变化 (例如必须极致省内存), 换界面的代价仅限于 `apps/desktop`。
 
 ## 12. 当前进度与文件清单
+
+**M1 到 M7 都已实现并推送** (2026-10-13)。下面按顺序给出各里程碑做了什么, 验证到哪一步,
+以及哪些地方还需要人动手。
+
+### 一句话总览
+
+| 里程碑 | 内容 | 状态 |
+| --- | --- | --- |
+| M1 | 用密钥直连 SQLCipher 读会话与消息 | 已用真实库验证 |
+| M2 | 自己解页加解 WAL, 找回被撤回的消息 | 通路已验证, 缺一次现场撤回样本 |
+| M3 | 增量归档密文, 让回溯不受 WAL 覆盖限制 | 已用真实账号目录验证 |
+| M4 | 一次性抓取库密钥 | 已实现, 运行时需要用户扫码与调试权限 |
+| M5 | 配置与命令行打通 | 已实现并验证 |
+| M6 | Tauri 桌面界面 | 已实现并编译通过, 界面观感需要用户过目 |
+| M7 | 导出 Markdown, JSON, CSV 与媒体 | 已用真实数据验证 |
+
+三个还没做的部分都在分发环节, 与功能无关: 自动更新, Windows 的 Inno Setup 安装器,
+Linux 的 `install.sh` 与 `just fake-dist`。
+
+### 需要用户动手的事
+
+1. **M2 的现场验证**: 在微信里发一条消息再撤回, 然后 `wxmsg recalls --chat <该会话 wxid>`。
+   `keep` 常驻之后这一步不再赶时间, 什么时候做都行
+2. **M4 的运行验证**: `just capture`, 需要在一个有调试权限的终端里跑, 并扫一次码
+3. **M6 的观感确认**: `just gui` 看一眼界面, 重点看托盘行为与窗口显隐是否符合预期
+
+### 文件清单
 
 **M1 已完成并验证** (2026-10-13): `core::store` 用抓到的密钥直连真实的 `message_1.db`,
 不需要任何手工解页。
@@ -592,16 +628,30 @@ just capture
 **还没做的部分**: 自动更新, Windows 安装器, Linux 安装脚本, `just fake-dist`。这些都在分发
 环节, 与界面功能无关, 因此没有在这一轮里铺开。
 
+打包这条路径已经跑通到 `.app`:
+
+| 检查 | 结果 |
+| --- | --- |
+| `just dist` 的编译 | 4 分 04 秒 (release, 首次) |
+| `.app` 产物 | 22 MB, 在 `target/release/bundle/macos/wxmsg.app` |
+| 包信息 | 标识 `com.azazo1.wxmsg`, 版本 0.1.0, 名称 `wxmsg`, 最低系统 12.0 |
+| 图标 | `Contents/Resources/icon.icns` 就位 |
+| dmg | **受限沙箱里失败**: 生成 dmg 要靠 AppleScript 驱动 Finder, 这一步被挡 |
+
+最后一项不是代码问题。在普通终端里 `just dist` 会正常出 dmg; 沙箱里用 `just dist-app` 只出
+`.app`。
+
 ### 下一步
 
-按依赖关系把顺序调整为: **M5 (CLI 与配置) -> M7 (导出) -> M6 (图形界面) -> M4 (密钥抓取)**。
-M4 需要用户扫码, 放在最后实现, 届时再约验证时间。
+功能都已经就位, 剩下的是三件需要人动手的事 (清单见本节开头), 加上分发环节的补充:
 
-M2 仍然欠一次现场验证 (发一条消息再撤回, 当场用 `recalls` 取回原文)。因为 `keep` 已经在跑
-归档, 这一步什么时候做都不会再错过窗口了:
+| 待办 | 说明 |
+| --- | --- |
+| 自动更新 | 启动静默检查, 下载校验 SHA256, 停在"等待重启"由用户点按钮 |
+| Windows 安装器 | Inno Setup, per-user 免提权, 升级沿用上次目录 |
+| Linux 安装脚本 | `install.sh` 幂等, 支持 `--silent` 与应用内升级调用 |
+| `just fake-dist` | 用正式打包路径产出 `v0.0.0` 的 fake 构建, 供端到端验证更新 |
 
-```shell
-wxmsg snap    # 先取一次快照
-wxmsg recalls --db "<数据根>/db_storage/message/message_1.db" --chat <该会话的内部 wxid>
-```
+这些都写在 `apps/desktop/README.md` 的末尾, 需要时按 `create-github-release-flow` 与
+`desktop-app-skill` 的要求补齐即可。
 

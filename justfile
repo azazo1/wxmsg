@@ -83,8 +83,13 @@ debug:
     APP_DATA_DIR=target/wxmsg-debug APP_LOG_DIR=target/wxmsg-debug/logs RUST_LOG=wxmsg_desktop_lib=trace,wxmsg_core=debug cargo run -q -p wxmsg-desktop
 
 # 打包出 .app 与 dmg 安装包.
+# 生成 dmg 要靠 AppleScript 驱动 Finder, 受限沙箱里会被挡; 那种情况下用 dist-app.
 dist:
     cargo tauri build
+
+# 只打包出 .app, 不生成 dmg; 任何终端里都能跑通.
+dist-app:
+    cargo tauri build --bundles app
 
 # 查看当前生效的配置, 以及各路径最终落在哪里.
 show-config *args:
