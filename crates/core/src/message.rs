@@ -51,8 +51,8 @@ impl RawMessage {
         let Some(raw) = self.content.as_ref() else {
             return Ok(String::new());
         };
-        let needs_decompress = self.content_flag == Some(CONTENT_FLAG_ZSTD)
-            || raw.starts_with(&ZSTD_MAGIC);
+        let needs_decompress =
+            self.content_flag == Some(CONTENT_FLAG_ZSTD) || raw.starts_with(&ZSTD_MAGIC);
         let bytes = if needs_decompress {
             let mut out = Vec::new();
             zstd::stream::read::Decoder::new(raw.as_slice())
@@ -167,10 +167,7 @@ mod tests {
 
     #[test]
     fn splits_sender_prefix() {
-        assert_eq!(
-            split_sender("wxid_abc:\n你好"),
-            (Some("wxid_abc"), "你好")
-        );
+        assert_eq!(split_sender("wxid_abc:\n你好"), (Some("wxid_abc"), "你好"));
         // 正文里的冒号不应被当前缀。
         assert_eq!(
             split_sender("时间: 2026-10-13\n正文"),

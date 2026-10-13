@@ -68,11 +68,7 @@ fn pad(text: &str, target: usize, right_align: bool) -> String {
 /// 渲染一张表格, 列间以两个空格分隔, 最后一列不补空格.
 ///
 /// `right_align` 与 `headers` 等长, 用于标记哪些列右对齐 (通常是数字列)。
-pub(crate) fn render(
-    headers: &[&str],
-    right_align: &[bool],
-    rows: &[Vec<String>],
-) -> String {
+pub(crate) fn render(headers: &[&str], right_align: &[bool], rows: &[Vec<String>]) -> String {
     let widths: Vec<usize> = headers
         .iter()
         .enumerate()
