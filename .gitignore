@@ -1,0 +1,35 @@
+# Rust
+/target
+**/*.rs.bk
+
+# 前端与 Tauri
+node_modules/
+dist/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+
+# 临时工作区
+.tmp/
+
+# 参考材料: 上游项目快照与分析工具, 只供本地查阅, 项目代码不依赖
+.references/
+
+# 运行期缓存: Frida Gadget 等第三方二进制
+.cache/
+
+# 归档目录 (默认位置已被 secrets/ 与自身规则覆盖, 这里兜底)
+archive/
+
+# 密钥与隐私数据: 绝不入库
+secrets/
+*.key
+keys.json
+all_keys.json
+hunted_keys*.txt
+*.db-wal
+*.db-shm
+
+# 系统与编辑器
+.DS_Store
+.idea/
+.vscode/
