@@ -8,7 +8,7 @@ use wxmsg_core::config::Config;
 
 use crate::cli::ConfigArgs;
 use crate::commands::config_path;
-use crate::paths;
+use wxmsg_core::paths;
 
 pub fn run(args: ConfigArgs) -> anyhow::Result<()> {
     let path = config_path(args.config.as_deref())?;

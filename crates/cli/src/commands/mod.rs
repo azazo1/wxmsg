@@ -76,7 +76,7 @@ pub(crate) fn load_keys(common: &CommonArgs) -> anyhow::Result<KeyStore> {
         Some(path) => path,
         None => load_config(common.config.as_deref())?
             .keys_file()
-            .unwrap_or_else(crate::paths::default_keys),
+            .unwrap_or_else(wxmsg_core::paths::default_keys),
     };
     let keys =
         KeyStore::load(&path).with_context(|| format!("加载密钥文件失败: {}", path.display()))?;

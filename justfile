@@ -73,6 +73,19 @@ export db out *args:
 capture *args:
     cargo run -q -p wxmsg-cli -- capture {{args}}
 
+# 启动界面 (用日常数据目录与平台日志位置).
+gui:
+    cargo run -q -p wxmsg-desktop
+
+# 以隔离的数据目录与最详细的日志启动调试实例.
+# 不触碰日常数据, 调试实例也能与正式实例同时运行.
+debug:
+    APP_DATA_DIR=target/wxmsg-debug APP_LOG_DIR=target/wxmsg-debug/logs RUST_LOG=wxmsg_desktop_lib=trace,wxmsg_core=debug cargo run -q -p wxmsg-desktop
+
+# 打包出 .app 与 dmg 安装包.
+dist:
+    cargo tauri build
+
 # 查看当前生效的配置, 以及各路径最终落在哪里.
 show-config *args:
     cargo run -q -p wxmsg-cli -- config {{args}}

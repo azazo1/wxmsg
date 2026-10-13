@@ -19,7 +19,7 @@ use wxmsg_core::keys::{KeyHistory, KeyStore};
 
 use crate::cli::CaptureArgs;
 use crate::commands::load_config;
-use crate::paths;
+use wxmsg_core::paths;
 
 /// 微信默认安装位置.
 const DEFAULT_APP: &str = "/Applications/WeChat.app";

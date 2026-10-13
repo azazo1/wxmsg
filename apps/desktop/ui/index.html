@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>wxmsg</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- 顶部留白区同时也是拖动区: 原生窗口按钮浮在这一行上。 -->
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-side"></div>
+      <div class="titlebar-title" data-tauri-drag-region>wxmsg</div>
+      <div class="titlebar-actions">
+        <button id="settings-button" class="icon-button" title="设置" aria-label="设置">⚙</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar">
+        <div class="search">
+          <input id="chat-search" type="search" placeholder="搜索会话" spellcheck="false" />
+        </div>
+        <div id="chat-list" class="chat-list" role="listbox" aria-label="会话列表"></div>
+        <div id="chat-empty" class="empty">正在读取会话…</div>
+      </aside>
+
+      <section class="detail">
+        <header class="detail-header">
+          <div>
+            <h1 id="chat-title">未选择会话</h1>
+            <p id="chat-subtitle" class="subtitle"></p>
+          </div>
+          <div class="detail-actions">
+            <label class="switch" title="把被撤回的消息也显示出来">
+              <input id="show-revoked" type="checkbox" />
+              <span>显示撤回</span>
+            </label>
+            <button id="more-button" class="text-button" hidden>显示更多</button>
+          </div>
+        </header>
+        <div id="message-list" class="message-list"></div>
+        <div id="detail-empty" class="empty">从左边选一个会话</div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <span id="status-version">v-</span>
+      <span id="status-source" class="muted"></span>
+      <span id="status-archive" class="muted"></span>
+      <button id="quit-button" class="link-button">退出</button>
+    </footer>
+
+    <dialog id="settings-dialog">
+      <form method="dialog" class="settings">
+        <h2>设置</h2>
+        <label class="row">
+          <input id="setting-start-hidden" type="checkbox" />
+          <span>启动时只留在托盘, 不显示主窗口</span>
+        </label>
+        <label class="row">
+          <input id="setting-hide-dock" type="checkbox" />
+          <span>主窗口隐藏时同时隐藏 dock 图标</span>
+        </label>
+        <label class="row">
+          <span>一次显示多少条消息</span>
+          <input id="setting-limit" type="number" min="20" max="5000" step="20" />
+        </label>
+        <section class="meta" id="settings-meta"></section>
+        <menu>
+          <button value="cancel" class="text-button">取消</button>
+          <button id="settings-save" value="save" class="primary-button">保存</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>

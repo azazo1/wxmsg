@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "wxmsg",
+  "version": "0.1.0",
+  "identifier": "com.azazo1.wxmsg",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "wxmsg",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 720,
+        "minHeight": 480,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "acceptFirstMouse": true
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "macOSPrivateApi": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.png", "icons/icon.icns"],
+    "category": "Utility",
+    "shortDescription": "微信本地聊天记录管理",
+    "longDescription": "读取本机微信的加密聊天记录, 找回被撤回的消息, 并把会话导出为 Markdown。",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

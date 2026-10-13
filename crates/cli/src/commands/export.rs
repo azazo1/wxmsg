@@ -15,7 +15,7 @@ use wxmsg_core::wal::Wal;
 
 use crate::cli::ExportArgs;
 use crate::commands::{load_config, load_keys, prepare_path};
-use crate::paths;
+use wxmsg_core::paths;
 
 pub fn run(args: ExportArgs) -> anyhow::Result<()> {
     let format = Format::parse(&args.format)

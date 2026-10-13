@@ -9,7 +9,7 @@ use wxmsg_core::archive::{Archive, Filter, PruneReport, Retention, now_seconds};
 
 use crate::cli::ArchiveArgs;
 use crate::commands::{format_size, parse_size};
-use crate::paths;
+use wxmsg_core::paths;
 
 /// 一次归档任务的全部配置.
 pub struct ArchiveJob {

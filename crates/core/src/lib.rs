@@ -19,6 +19,7 @@ pub mod io;
 pub mod keys;
 pub mod media;
 pub mod message;
+pub mod paths;
 pub mod recall;
 pub mod store;
 pub mod verify;
