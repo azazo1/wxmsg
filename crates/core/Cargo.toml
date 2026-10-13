@@ -1,0 +1,17 @@
+[package]
+name = "wxmsg-core"
+description = "微信本地记录的读取, 归档与撤回还原"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+md-5 = "0.11.0"
+rusqlite = { version = "0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+tracing = "0.1.44"
+zstd = "0.14.2"

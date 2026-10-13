@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+repository = "https://github.com/azazo1/wxmsg"
+
+[workspace.dependencies]
+wxmsg-core = { path = "crates/core" }
